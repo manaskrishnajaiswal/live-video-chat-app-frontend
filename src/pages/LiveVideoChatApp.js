@@ -6,44 +6,66 @@ const LiveVideoChatApp = () => {
   const navigate = useNavigate();
   const [userId, setUserId] = useState(null);
   const [roomId, setRoomId] = useState(null);
+  const [isWsConnected, setIsWsConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const ws = useRef(null);
 
   useEffect(() => {
     if (!userId || ws.current) return;
 
     console.log(`🟢 Connecting WebSocket: userId=${userId}`);
+    setIsLoading(true);
+
     ws.current = new WebSocket(
       `${process.env.REACT_APP_WEBSOCKET_URL}?user_id=${userId}`
     );
 
-    ws.current.onopen = () => console.log("✅ WebSocket connected");
+    ws.current.onopen = () => {
+      console.log("✅ WebSocket connected");
+      setIsWsConnected(true);
+      setIsLoading(false);
+    };
+
     ws.current.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         console.log("📩 Received WebSocket message:", data);
-        const joinRoom = data?.action == "join-room";
-        if (joinRoom && roomId && userId) {
-          navigate(`/room/${roomId}?user_id=${userId}`);
+        if (
+          data?.action &&
+          data.action === "join-room" &&
+          data.room_id &&
+          userId
+        ) {
+          navigate(`/room/${data.room_id}?user_id=${userId}`);
         }
       } catch (err) {
         console.error("⚠️ Error parsing WebSocket message:", err);
       }
     };
-    ws.current.onerror = (error) => console.error("❌ WebSocket error:", error);
-    ws.current.onclose = (event) =>
+
+    ws.current.onerror = (error) => {
+      console.error("❌ WebSocket error:", error);
+      setIsLoading(false);
+    };
+
+    ws.current.onclose = (event) => {
       console.log(
         `⚠️ WebSocket closed (code: ${event.code}, reason: ${event.reason})`
       );
+      setIsWsConnected(false);
+      setIsLoading(false);
+    };
 
     return () => {
       console.log("🛑 Closing WebSocket...");
       ws.current?.close();
       ws.current = null;
+      setIsWsConnected(false);
     };
   }, [userId]);
 
   useEffect(() => {
-    if (!roomId || !ws.current) return;
+    if (!roomId || !ws.current || !isWsConnected) return;
 
     try {
       console.log("🚀 Sending create-room request...");
@@ -57,12 +79,13 @@ const LiveVideoChatApp = () => {
     } catch (error) {
       console.error("❌ Error sending create-room request:", error);
     }
-  }, [roomId]);
+  }, [roomId, isWsConnected]);
 
   const generateUserId = () => setUserId(`user-${generateIID()}`);
   const generateRoomId = () => setRoomId(`room-${generateIID()}`);
+
   const joinRoom = () => {
-    if (ws.current && userId && roomId) {
+    if (ws.current && isWsConnected && userId && roomId) {
       try {
         console.log(
           `🚀 Sending join-room request: userId=${userId}, roomId=${roomId}`
@@ -91,10 +114,11 @@ const LiveVideoChatApp = () => {
         <div>
           {!userId && (
             <button
-              className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:scale-95 transition-transform"
+              className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:scale-95 transition-transform flex items-center justify-center gap-2"
               onClick={generateUserId}
+              disabled={isLoading}
             >
-              Generate User
+              {isLoading ? <div className="loader"></div> : "Generate User"}
             </button>
           )}
           <p className="text-white mt-2">{userId}</p>
@@ -102,10 +126,11 @@ const LiveVideoChatApp = () => {
         <div>
           {userId && !roomId && (
             <button
-              className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 active:scale-95 transition-transform"
+              className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 active:scale-95 transition-transform flex items-center justify-center gap-2"
               onClick={generateRoomId}
+              disabled={!isWsConnected || isLoading}
             >
-              Create Room
+              {isLoading ? <div className="loader"></div> : "Create Room"}
             </button>
           )}
           <p className="text-white mt-2">{roomId}</p>
@@ -113,10 +138,11 @@ const LiveVideoChatApp = () => {
         <div>
           {userId && roomId && (
             <button
-              className="px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-800 active:scale-95 transition-transform"
+              className="px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-800 active:scale-95 transition-transform flex items-center justify-center gap-2"
               onClick={joinRoom}
+              disabled={!isWsConnected || isLoading}
             >
-              Join Room
+              {isLoading ? <div className="loader"></div> : "Join Room"}
             </button>
           )}
         </div>
